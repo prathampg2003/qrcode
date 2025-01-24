@@ -189,14 +189,14 @@ async def verify(mobile_number: str):
 
         # Check if user exists
         cursor.execute('''
-            SELECT number_of_people, no_of_visits FROM visitors WHERE mobile_number = %s
+            SELECT name,number_of_people, no_of_visits FROM visitors WHERE mobile_number = %s
         ''', (mobile_number,))
         result = cursor.fetchone()
 
         if not result:
             return HTTPException(status_code=404, detail="User not found.")
 
-        number_of_people, no_of_visits = result
+        name,number_of_people, no_of_visits = result
 
         # If `number_of_people` is not set, show a form to collect the value
         if not number_of_people or number_of_people == 0:
@@ -230,7 +230,7 @@ async def verify(mobile_number: str):
         conn.close()
 
         return JSONResponse(content={
-            "message": f"WELCOME, QR IS SCANNED AND VERIFIED. Number of visits: {no_of_visits}."
+            "message": f"Hi {name},\n Welcome to the CP meet \n Your entry is verified ."
         }, status_code=200)
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
