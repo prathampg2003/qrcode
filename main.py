@@ -12,10 +12,11 @@ from email import encoders
 import mysql.connector
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi import Form
-# FastAPI App Initialization
+
+
 app = FastAPI()
 
-# CORS Middleware (Optional)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,6 +52,9 @@ class PreRegistrationData(BaseModel):
     mobile_number: str
     email: str
     date_of_visit: str
+
+class UpdateData(BaseModel):
+    number_of_people: int
 
 
 
@@ -182,40 +186,34 @@ async def submit2(data: PreRegistrationData, request: Request):
 
 
 @app.get("/verify/{mobile_number}")
-async def verify(mobile_number: str):
+async def verify(mobile_number: str,request: Request):
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
 
         # Check if user exists
         cursor.execute('''
-            SELECT name,number_of_people, no_of_visits FROM visitors WHERE mobile_number = %s
+            SELECT name, number_of_people, no_of_visits FROM visitors WHERE mobile_number = %s
         ''', (mobile_number,))
         result = cursor.fetchone()
 
         if not result:
             return HTTPException(status_code=404, detail="User not found.")
 
-        name,number_of_people, no_of_visits = result
+        name, number_of_people, no_of_visits = result
 
-        # If `number_of_people` is not set, show a form to collect the value
+        # If `number_of_people` is not set, return status code 202 and update URL
         if not number_of_people or number_of_people == 0:
-            html_content = f"""
-            <html>
-                <head>
-                    <title>Enter Number of People</title>
-                </head>
-                <body>
-                    <h2>Please enter the number of people for your visit:</h2>
-                    <form action="/update_people/{mobile_number}" method="post">
-                        <label for="number_of_people">Number of People:</label>
-                        <input type="number" id="number_of_people" name="number_of_people" min="1" required>
-                        <button type="submit">Submit</button>
-                    </form>
-                </body>
-            </html>
-            """
-            return HTMLResponse(content=html_content, status_code=200)
+            base_url = str(request.base_url).rstrip("/")
+            update_url = f"{base_url}/update/{mobile_number}"
+            return JSONResponse(content={
+                "status": 202,
+                "message": "Number of people not specified. Please update the information.",
+                "name":name,
+                "mobilenumber":mobile_number,
+                "update_url": update_url
+
+            }, status_code=202)
 
         # Increment visit count and mark as scanned
         no_of_visits = (no_of_visits or 0) + 1
@@ -230,15 +228,18 @@ async def verify(mobile_number: str):
         conn.close()
 
         return JSONResponse(content={
-            "message": f"Hi {name},\n Welcome to the CP meet \n Your entry is verified ."
+            "message": f"Hi {name},\nWelcome to the CP meet.\nYour entry is verified."
         }, status_code=200)
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/update_people/{mobile_number}")
-async def update_people(mobile_number: str, number_of_people: int = Form(...)):
+@app.post("/update/{mobile_number}")
+async def update_people(mobile_number: str, data: UpdateData, request: Request):
     try:
+        # Extract `number_of_people` from the JSON body
+        number_of_people = data.number_of_people
+
+        # Connect to the database
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
 
@@ -249,7 +250,14 @@ async def update_people(mobile_number: str, number_of_people: int = Form(...)):
         result = cursor.fetchone()
 
         if not result:
-            return HTTPException(status_code=404, detail="User not found.")
+            # If user doesn't exist, return the `/update` URL with 202 status
+            return JSONResponse(
+                content={
+                    "detail": "User not found.",
+                    "update_url": f"{request.base_url}update/{mobile_number}"
+                },
+                status_code=202
+            )
 
         # Update the number of people for the visit
         cursor.execute('''
@@ -259,12 +267,12 @@ async def update_people(mobile_number: str, number_of_people: int = Form(...)):
         ''', (number_of_people, mobile_number))
         conn.commit()
 
-        # Redirect to the `/verify` endpoint to complete the process
         cursor.close()
         conn.close()
-        return RedirectResponse(url=f"/verify/{mobile_number}", status_code=302)
+
+        # Redirect to the `/verify` endpoint
+        return await verify(mobile_number, request)
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
 
-# Initialize Database when starting
 init_db()
