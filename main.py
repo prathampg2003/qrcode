@@ -256,7 +256,7 @@ async def update_people(mobile_number: str, data: UpdateData, request: Request):
                     "detail": "User not found.",
                     "update_url": f"{request.base_url}update/{mobile_number}"
                 },
-                status_code=202
+                status_code=404
             )
 
         # Update the number of people for the visit
